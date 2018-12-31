@@ -29,7 +29,9 @@ It's for the members who joined whois-pwnable-study
 # 참고 링크 (Anyone can add some helpful links to this list)
 
 - [HITCON-training for beginners](https://github.com/scwuaptx/HITCON-Training)
+- [linux-x86-exploit-techniques tutorial](https://sploitfun.wordpress.com/2015/06/26/linux-x86-exploit-development-tutorial-series/)
 - [lazenca.net](https://www.lazenca.net/)
 - [glibc-malloc 소개](https://sploitfun.wordpress.com/2015/02/10/understanding-glibc-malloc/)
+- [program memory](https://manybutfinite.com/post/anatomy-of-a-program-in-memory/) (블로그의 다른 글들도 읽어볼만함)
 - [How to heap](https://github.com/shellphish/how2heap)
 - [ctf4u - 많은 문제들](https://ctf.katsudon.org/ctf4u/)
