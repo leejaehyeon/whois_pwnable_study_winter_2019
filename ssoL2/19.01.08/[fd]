@@ -25,9 +25,6 @@ int main(int argc, char* argv[], char* envp[]){
 위에 fd.c 소스코드
 
 
-
-
-
 음
 
 main 함수 보니
