@@ -3,15 +3,16 @@
 
 
 
-##Background 
-###heap chunk management (fastbin,unsorted bin) + etc
+# Background  
+
+### heap chunk management (fastbin,unsorted bin) + etc
 
 * 읽기전에 <http://umbum.tistory.com/386> 여기 들러서 free chunk 구조를 보고오세요~
 
 Heap 영역을 allocate할 때 할당된 크기에 따라서 free하였을 때 관리되는 방법과 영역이 다릅니다.
 
-####fastbin
-#####[64bit 기준]
+#### fastbin
+##### [64bit 기준]
 0x20~0x80의 chunksize를 가지는 경우 fastbin에서 관리를 하게 됩니다. 
 간단한 예시 코드로 설명해드리겠습니다.
 
@@ -84,9 +85,9 @@ C의 주소가 할당되면서 다시 `B의 주소`가 `fastbin`에 들어가게
 
 간단하게 `fastbin`의 작동원리에 대해서 알아보았습니다. `fastbin`은 이름 그대로 `fast`함을 추구하기 때문에 다른 bin들보다는 `checking`이 덜한 편입니다.  
   
-####이 문제는 `fastbin`에 들어간 청크들의 `fd`를 조작하여 원하는 곳에 청크를 할당받을 수 있다는 점을 이용하여 풀이하게 됩니다.
+#### 이 문제는 `fastbin`에 들어간 청크들의 `fd`를 조작하여 원하는 곳에 청크를 할당받을 수 있다는 점을 이용하여 풀이하게 됩니다.
 
-####unsorted bin
+#### unsorted bin
 free된 청크가 top청크가 아닐경우 small / large bin으로 들어가는 것이 아닌 `unsorted bin`이라는 곳에 들어가 재할당을 기다립니다. 이때 이bin을 관리하는 곳이 `main arena`라는 곳입니다.  
   
 쉽게 말하자면 fastbin size가 아닌 청크들(0x80보다 큰)이 `free`되면 `fd`,`bk`에 `main_arena`의 주소가 담기게 됩니다.  따라서 이 부분을 `leak`하게 된다면 `libc base`주소를 알 수 있습니다.
@@ -110,7 +111,7 @@ libc내부에 쉘을 실행시키는 `gadget`이 있는데 `execve("/bin/sh"...)
 구하는 방법은 아래의 주소를 참고.  
 <https://www.lazenca.net/pages/viewpage.action?pageId=16810292>
 
-##Exploit scenario
+## Exploit scenario
 
 원래 바이너리 분석을 하겠지만, 이 문제는 정말 쉽다. 분석은 스스로 해보도록 합시다..  
 간단하게만 말하자면, `allocate`, `fill`, `free`, `dump` 이렇게 4가지의 메뉴가 있는데 각자 그 메뉴의 충실한 역할을 수행합니다.  
@@ -142,8 +143,8 @@ libc내부에 쉘을 실행시키는 `gadget`이 있는데 `execve("/bin/sh"...)
 
 그렇게 되면 `malloc()`이 호출되면 쉘이 따지게 됩니다!!
 
-##Exploit code
-#####삽질이 많습니다...
+## Exploit code
+##### ⚠삽질이 많습니다...
 
 	from pwn import*
 	
