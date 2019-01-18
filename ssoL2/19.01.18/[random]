@@ -1,0 +1,161 @@
+#include <stdio.h>
+
+int main(){
+	unsigned int random;
+	random = rand();	// random value!
+
+	unsigned int key=0;
+	scanf("%d", &key);
+
+	if( (key ^ random) == 0xdeadbeef ){
+		printf("Good!\n");
+		system("/bin/cat flag");
+		return 0;
+	}
+
+	printf("Wrong, maybe you should try 2^32 cases.\n");
+	return 0;
+}
+
+
+
+
+
+-------------------------------------------------------------------------------------
+
+위는 random.c 소스코드 파일
+
+
+메인 함수 보면
+random이라는 int형 변수에 rand함수 리턴값이 들어가는데
+이때 rand함수의 seed가 일정하므로
+항상 일정한 값이 들어옴을 알 수 있음
+
+
+그래서 int형인 key값을 입력하고
+
+
+이 key와 정해진 random함수를 xor 해서 0xdeadbeef 이면
+system 함수를 얻을 수 있음.
+
+
+근데, 
+xor에서
+
+a xor b = c
+a xor c = b
+b xor c = a
+이므로,
+
+입력할 key값이
+
+random ^ 0xdeadbeef 이면 되는 거다.
+
+
+
+
+
+
+이제 random이 무슨 값을 갖고 있는지만 찾으면 되는데 !
+
+gdb로 찾아보즈앙 ~!
+
+
+
+
+disas main하니까
+
+(gdb) disas main
+Dump of assembler code for function main:
+   0x00000000004005f4 <+0>:	push   rbp
+   0x00000000004005f5 <+1>:	mov    rbp,rsp
+   0x00000000004005f8 <+4>:	sub    rsp,0x10
+   0x00000000004005fc <+8>:	mov    eax,0x0
+   0x0000000000400601 <+13>:	call   0x400500 <rand@plt>
+   0x0000000000400606 <+18>:	mov    DWORD PTR [rbp-0x4],eax
+   0x0000000000400609 <+21>:	mov    DWORD PTR [rbp-0x8],0x0
+   0x0000000000400610 <+28>:	mov    eax,0x400760
+   0x0000000000400615 <+33>:	lea    rdx,[rbp-0x8]
+   0x0000000000400619 <+37>:	mov    rsi,rdx
+   0x000000000040061c <+40>:	mov    rdi,rax
+   0x000000000040061f <+43>:	mov    eax,0x0
+   0x0000000000400624 <+48>:	call   0x4004f0 <__isoc99_scanf@plt>
+   0x0000000000400629 <+53>:	mov    eax,DWORD PTR [rbp-0x8]
+   0x000000000040062c <+56>:	xor    eax,DWORD PTR [rbp-0x4]
+   0x000000000040062f <+59>:	cmp    eax,0xdeadbeef
+   0x0000000000400634 <+64>:	jne    0x400656 <main+98>
+   0x0000000000400636 <+66>:	mov    edi,0x400763
+   0x000000000040063b <+71>:	call   0x4004c0 <puts@plt>
+   0x0000000000400640 <+76>:	mov    edi,0x400769
+   0x0000000000400645 <+81>:	mov    eax,0x0
+   0x000000000040064a <+86>:	call   0x4004d0 <system@plt>
+   0x000000000040064f <+91>:	mov    eax,0x0
+   0x0000000000400654 <+96>:	jmp    0x400665 <main+113>
+   0x0000000000400656 <+98>:	mov    edi,0x400778
+   0x000000000040065b <+103>:	call   0x4004c0 <puts@plt>
+   0x0000000000400660 <+108>:	mov    eax,0x0
+   0x0000000000400665 <+113>:	leave  
+   0x0000000000400666 <+114>:	ret    
+End of assembler dump.
+
+
+
+
+
+
+
+이렇게 나왔는데
+
+앞에 c코드에서
+
+	random = rand();	// random value!
+  
+  
+에서 볼 수 있듯이
+rand함수 끝내고 random 변수를 가리키기 때문에.
+
+
+
+
+
+
+
+
+   0x0000000000400601 <+13>:	call   0x400500 <rand@plt>
+   0x0000000000400606 <+18>:	mov    DWORD PTR [rbp-0x4],eax
+   
+   
+
+
+
+
+
+
+(gdb) b *main+18
+Breakpoint 1 at 0x400606
+(gdb) r
+Starting program: /home/random/random 
+
+Breakpoint 1, 0x0000000000400606 in main ()
+(gdb) info register $eax
+eax            0x6b8b4567	1804289383
+
+
+
+
+
+샤샷
+
+
+
+
+이제 계산기로 뚜들겨서 xor 한 다음
+
+./random해서 key 입력 해주면
+flag 출력 !! 빠밥 !!
+
+
+
+
+
+finish ~!
